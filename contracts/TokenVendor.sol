@@ -17,6 +17,7 @@ contract TokenVendor is Ownable {
     Students internal students;
 
     event BuyTokens(address buyer, uint256 amountOfETH, uint256 amountOfTokens);
+    event NotEnoughTokens(address buyer, uint256 amountOfETH, uint256 amountOfTokens);
 
     constructor(address tokenAddress, address priceFeedAddress, address studentsAddress) {
         token = AlexGCoin(tokenAddress);
@@ -24,25 +25,24 @@ contract TokenVendor is Ownable {
         students = Students(studentsAddress);
     }
 
-    function buyTokens() public payable returns (uint256 tokenAmount) {
+    function buyTokens() public payable {
         require(msg.value > 0, "Send ETH to buy some tokens");
         uint256 currentPrice = tokenPrice();
         uint256 amountToBuy = msg.value * currentPrice / (10 ** 18);
         uint256 vendorBalance = token.balanceOf(address(this));
         if (vendorBalance >= amountToBuy) {
-            (bool sent) = token.transfer(msg.sender, amountToBuy);
+            bool sent = token.transfer(msg.sender, amountToBuy);
             require(sent, "Failed to transfer token to user");
             emit BuyTokens(msg.sender, msg.value, amountToBuy);
-            return amountToBuy;
         } else {
             (bool sent,) = msg.sender.call{value : msg.value}("Sorry, there is not enough tokens to buy");
             require(sent, "Failed to return back ETH to user");
-            return 0;
+            emit NotEnoughTokens(msg.sender, msg.value, amountToBuy);
         }
     }
 
     function tokenPrice() public view returns (uint256) {
-        (,int256 ethUsdPrice,,,) = priceFeed.latestRoundData();
-        return uint256(ethUsdPrice) / students.getStudentsList().length;
+        (,int256 ETHUSDPrice,,,) = priceFeed.latestRoundData();
+        return uint256(ETHUSDPrice) / students.getStudentsList().length;
     }
 }

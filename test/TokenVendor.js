@@ -53,10 +53,14 @@ describe('Test token vendor contract', () => {
         });
 
         it('eth returned because vendor has not enough tokens', async () => {
+            const tokensPerEth = await vendorContract.tokenPrice();
             const sendAmount = ethers.utils.parseEther('999');
+            const receiveAmount = tokensPerEth * 999;
             const txBuyTokens = await vendorContract.connect(addr2).buyTokens({value: sendAmount});
             await txBuyTokens.wait();
-            await expect(txBuyTokens).to.changeEtherBalance(addr2, 0);
+            await expect(txBuyTokens)
+                .to.emit(vendorContract, 'NotEnoughTokens')
+                .withArgs(addr2.address, sendAmount, receiveAmount);
         });
     });
 });
