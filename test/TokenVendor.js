@@ -56,11 +56,15 @@ describe('Test token vendor contract', () => {
             const tokensPerEth = await vendorContract.tokenPrice();
             const sendAmount = ethers.utils.parseEther('999');
             const receiveAmount = tokensPerEth * 999;
-            const txBuyTokens = await vendorContract.connect(addr2).buyTokens({value: sendAmount});
-            await txBuyTokens.wait();
-            await expect(txBuyTokens)
+            const senderBalanceBefore = await ethers.provider.getBalance(addr2.address);
+            const txResponse = await vendorContract.connect(addr2).buyTokens({value: sendAmount});
+            const receipt = await txResponse.wait();
+            const senderBalanceAfter = await ethers.provider.getBalance(addr2.address);
+            await expect(txResponse)
                 .to.emit(vendorContract, 'NotEnoughTokens')
                 .withArgs(addr2.address, sendAmount, receiveAmount);
+            let totalGasUsed = receipt.gasUsed.mul(txResponse.gasPrice);
+            expect(senderBalanceBefore).to.equal(senderBalanceAfter.add(totalGasUsed));
         });
     });
 });
