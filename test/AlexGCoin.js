@@ -16,11 +16,17 @@ describe("Test token contract", function () {
         let zeroAddress = '0x0000000000000000000000000000000000000000';
         await expect(tokenContract.connect(owner).mint(owner.address, mintAmount))
             .to.emit(tokenContract, 'Transfer').withArgs(zeroAddress, owner.address, mintAmount);
+
         await expect(tokenContract.connect(owner).approve(spender.address, tokensAmount))
             .to.emit(tokenContract, 'Approval').withArgs(owner.address, spender.address, tokensAmount);
-        const allowance = await tokenContract.allowance(owner.address, spender.address);
-        expect(tokensAmount.toString()).to.equal(allowance.toString());
+
+        await expect(tokenContract.connect(owner).approve(owner.address, tokensAmount))
+            .to.emit(tokenContract, 'Approval').withArgs(owner.address, owner.address, tokensAmount);
+
         await expect(tokenContract.connect(owner).transferFrom(owner.address, spender.address, tokensAmount))
             .to.emit(tokenContract, 'Transfer').withArgs(owner.address, spender.address, tokensAmount);
+
+        const allowance = await tokenContract.allowance(owner.address, spender.address);
+        expect(tokensAmount.toString()).to.equal(allowance.toString());
     });
 });
