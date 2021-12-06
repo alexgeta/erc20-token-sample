@@ -11,5 +11,9 @@ describe("Test token contract", function () {
         const totalSupply = await tokenContract.totalSupply();
         const ownerBalance = await tokenContract.balanceOf(owner.address);
         expect(totalSupply.toString()).to.equal(ownerBalance.toString());
+        let mintAmount = 10 ** 8;
+        let zeroAddress = '0x0000000000000000000000000000000000000000';
+        await expect(tokenContract.connect(owner).mint(owner.address, mintAmount))
+            .to.emit(tokenContract, 'Transfer').withArgs(zeroAddress, owner.address, mintAmount);
     });
 });
