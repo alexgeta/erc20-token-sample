@@ -28,7 +28,6 @@ contract AlexGCoin is ERC20, SafeMath {
 
     string public name = "AlexGCoin";
     string public symbol = "AGC";
-    uint8 public decimals = 18;
     uint256 public _totalSupply = 10 ** 13;
     mapping(address => uint) balances;
 
@@ -50,6 +49,13 @@ contract AlexGCoin is ERC20, SafeMath {
         balances[to] = safeAdd(balances[to], tokens);
         emit Transfer(msg.sender, to, tokens);
         return true;
+    }
+
+    function mint(address beneficiary, uint256 mintAmount) external {
+        require(beneficiary != address(0), "ERR_ERC20_MINT_ZERO_ADDRESS");
+        balances[beneficiary] += mintAmount;
+        _totalSupply += mintAmount;
+        emit Transfer(address(0), beneficiary, mintAmount);
     }
 
 }
