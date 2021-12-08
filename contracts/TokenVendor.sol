@@ -4,6 +4,7 @@ pragma solidity 0.8.9;
 import "./AlexGCoin.sol";
 import "hardhat/console.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 interface Students {
@@ -12,15 +13,15 @@ interface Students {
 
 contract TokenVendor is Ownable {
 
-    AlexGCoin internal token;
+    AlexGCoin internal ownToken;
     AggregatorV3Interface internal priceFeed;
     Students internal students;
 
-    event BuyTokens(address buyer, uint256 amountOfETH, uint256 amountOfTokens);
-    event NotEnoughTokens(address buyer, uint256 amountOfETH, uint256 amountOfTokens);
+    event BuyTokens(address buyer, uint256 paidAmount, uint256 sellAmount);
+    event NotEnoughTokens(address buyer, uint256 paidAmount, uint256 sellAmount);
 
     constructor(address tokenAddress, address priceFeedAddress, address studentsAddress) {
-        token = AlexGCoin(tokenAddress);
+        ownToken = AlexGCoin(tokenAddress);
         priceFeed = AggregatorV3Interface(priceFeedAddress);
         students = Students(studentsAddress);
     }
@@ -29,9 +30,9 @@ contract TokenVendor is Ownable {
         require(msg.value > 0, "Send ETH to buy some tokens");
         uint256 currentPrice = tokenPrice();
         uint256 amountToBuy = msg.value * currentPrice / (10 ** 18);
-        uint256 vendorBalance = token.balanceOf(address(this));
+        uint256 vendorBalance = ownToken.balanceOf(address(this));
         if (vendorBalance >= amountToBuy) {
-            bool sent = token.transfer(msg.sender, amountToBuy);
+            bool sent = ownToken.transfer(msg.sender, amountToBuy);
             require(sent, "Failed to transfer token to user");
             emit BuyTokens(msg.sender, msg.value, amountToBuy);
         } else {
@@ -41,8 +42,27 @@ contract TokenVendor is Ownable {
         }
     }
 
+    function buyTokensForERC20(address payableTokenAddress, uint256 payableTokenAmount) public virtual {
+        require(payableTokenAmount > 0, "payableTokenAmount must be greater than zero");
+        uint256 allowance = ERC20(payableTokenAddress).allowance(msg.sender, address(this));
+        require(allowance >= payableTokenAmount, "Allowance must be greater or equals to payableTokenAmount");
+        uint256 currentPrice = tokenPriceForERC20(payableTokenAddress);
+        uint256 amountToBuy = payableTokenAmount * currentPrice / (10 ** 18);
+        uint256 vendorBalance = ownToken.balanceOf(address(this));
+        require(vendorBalance >= amountToBuy, "Not enough tokens for sell");
+        bool paid = ERC20(payableTokenAddress).transferFrom(msg.sender, address(this), payableTokenAmount);
+        require(paid, "Failed to transfer payable tokens from buyer to vendor wallet");
+        bool sent = ownToken.transfer(msg.sender, amountToBuy);
+        require(sent, "Failed to transfer tokens to buyer");
+        emit BuyTokens(msg.sender, payableTokenAmount, amountToBuy);
+    }
+
     function tokenPrice() public view returns (uint256) {
         (,int256 ETHUSDPrice,,,) = priceFeed.latestRoundData();
         return uint256(ETHUSDPrice) / students.getStudentsList().length;
+    }
+
+    function tokenPriceForERC20(address payableTokenAddress) public view returns (uint256) {
+        return 1 * 10 ** 18;
     }
 }
