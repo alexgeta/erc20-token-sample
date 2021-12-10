@@ -11,21 +11,23 @@ async function main() {
     let deployable = await hre.ethers.getContractFactory("AlexGCoin");
     const tokenContract = await deployable.deploy();
     await tokenContract.deployed();
-    await new Promise(resolve => setTimeout(resolve, 60000)); // pause 3-4 blocks for etherscan update
+    await new Promise(resolve => setTimeout(resolve, 60000));
     await hre.run("verify:verify", {
         address: tokenContract.address,
         contract: "contracts/AlexGCoin.sol:AlexGCoin"
     });
     //deploy vendor contract
+    const tokenContractAddress = tokenContract.address;
     const priceFeed = process.env.PRICE_FEED;
     const studentsContract = process.env.STUDENTS_CONTRACT;
+    const ownableTokenContract = process.env.OWNABLE_TOKEN_CONTRACT;
     deployable = await hre.ethers.getContractFactory("TokenVendor");
-    const vendorContract = await deployable.deploy(tokenContract.address, priceFeed, studentsContract);
+    const vendorContract = await deployable.deploy(tokenContractAddress, priceFeed, studentsContract, ownableTokenContract);
     await vendorContract.deployed();
-    await new Promise(resolve => setTimeout(resolve, 60000)); // pause 3-4 blocks for etherscan update
+    await new Promise(resolve => setTimeout(resolve, 60000));
     await hre.run("verify:verify", {
         address: vendorContract.address,
-        constructorArguments: [tokenContract.address, priceFeed, studentsContract]
+        constructorArguments: [tokenContractAddress, priceFeed, studentsContract, ownableTokenContract]
     });
     await tokenContract.transfer(vendorContract.address, tokenContract.totalSupply());
 }

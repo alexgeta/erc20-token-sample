@@ -2,7 +2,6 @@ require("dotenv").config();
 const {ethers} = require('hardhat');
 const {use, expect} = require('chai');
 const {solidity} = require('ethereum-waffle');
-const {BigNumber} = require("ethers");
 use(solidity);
 
 describe('Test token vendor contract', () => {
@@ -10,38 +9,55 @@ describe('Test token vendor contract', () => {
     let owner;
     let addr1;
     let addr2;
+    let addr3;
     let ownTokenContract;
     let daiTokenContract;
     let vendorContract;
     let vendorTokensSupply;
+    let ownableTokenName;
     const priceFeed = process.env.PRICE_FEED;
     const studentsContract = process.env.STUDENTS_CONTRACT;
     const daiTokenAddress = process.env.DAI_TOKEN_CONTRACT;
 
     before(async () => {
-        [owner, addr1, addr2] = await ethers.getSigners();
+        [owner, addr1, addr2, addr3] = await ethers.getSigners();
+        //Deploy ERC20 token
         let contractFactory = await ethers.getContractFactory('AlexGCoin');
         ownTokenContract = await contractFactory.deploy();
+
+        //Deploy ERC721 token
+        contractFactory = await ethers.getContractFactory('NFTFactory');
+        const nftContract = await contractFactory.deploy('TestNFT', 'TFT');
+        await nftContract.deployed();
+        await nftContract.connect(owner).createToken(addr1.address);
+        await nftContract.connect(owner).createToken(addr2.address);
+        ownableTokenName = await nftContract.name();
+
+        //Deploy vendor for ERC20 token
         contractFactory = await ethers.getContractFactory('TokenVendor');
-        vendorContract = await contractFactory.deploy(ownTokenContract.address, priceFeed, studentsContract);
+        vendorContract = await contractFactory.deploy(ownTokenContract.address, priceFeed, studentsContract, nftContract.address);
         await ownTokenContract.transfer(vendorContract.address, ownTokenContract.totalSupply());
         await vendorContract.transferOwnership(owner.address);
         vendorTokensSupply = await ownTokenContract.balanceOf(vendorContract.address);
+
         //mint 1000 DAI tokens
-        daiTokenContract = await ethers.getContractAt('AlexGCoin', daiTokenAddress, owner);
+        let mintableERC20Interface = 'AlexGCoin';
+        daiTokenContract = await ethers.getContractAt(mintableERC20Interface, daiTokenAddress, owner);
         await daiTokenContract.connect(owner).mint(addr2.address, ethers.utils.parseEther("1000"));
-        const daiBalance = await daiTokenContract.balanceOf(addr2.address);
     });
 
     describe('Test buyTokens() method', () => {
 
-        it('buyTokens reverted no eth sent', async () => {
-            const sendAmount = ethers.utils.parseEther("0");
+        it('buyTokens reverted: no eth sent', async () => {
             await expect(
-                vendorContract.connect(addr1).buyTokens({
-                    value: sendAmount,
-                }),
+                vendorContract.connect(addr1).buyTokens({value: 0})
             ).to.be.revertedWith('Send ETH to buy some tokens');
+        });
+
+        it('buyTokens reverted: dont have required NFT', async () => {
+            await expect(
+                vendorContract.connect(addr3).buyTokens({value: 0})
+            ).to.be.revertedWith('Only owner of ' + ownableTokenName + ' can call this function');
         });
 
         it('buyTokens success!', async () => {
@@ -108,6 +124,12 @@ describe('Test token vendor contract', () => {
 
             const vendorDaiBalance = await daiTokenContract.balanceOf(vendorContract.address);
             expect(vendorDaiBalance.toString()).to.equal(sendAmount.toString());
+        });
+
+        it('buyTokensForERC20 reverted: dont have required NFT', async () => {
+            await expect(
+                vendorContract.connect(addr3).buyTokensForERC20(daiTokenAddress, 1234)
+            ).to.be.revertedWith('Only owner of ' + ownableTokenName + ' can call this function');
         });
     });
 });

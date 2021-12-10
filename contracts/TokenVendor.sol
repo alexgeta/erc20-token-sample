@@ -5,6 +5,7 @@ import "./AlexGCoin.sol";
 import "hardhat/console.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 interface Students {
@@ -16,17 +17,25 @@ contract TokenVendor is Ownable {
     AlexGCoin internal ownToken;
     AggregatorV3Interface internal priceFeed;
     Students internal students;
+    ERC721 internal ownableToken;
 
     event BuyTokens(address buyer, uint256 paidAmount, uint256 sellAmount);
     event NotEnoughTokens(address buyer, uint256 paidAmount, uint256 sellAmount);
 
-    constructor(address tokenAddress, address priceFeedAddress, address studentsAddress) {
+    constructor(address tokenAddress, address priceFeedAddress, address studentsAddress, address ownableTokenAddress) {
         ownToken = AlexGCoin(tokenAddress);
         priceFeed = AggregatorV3Interface(priceFeedAddress);
         students = Students(studentsAddress);
+        ownableToken = ERC721(ownableTokenAddress);
     }
 
-    function buyTokens() public payable {
+    modifier onlyTokenOwner {
+        uint256 tokenBalance = ownableToken.balanceOf(msg.sender);
+        require(tokenBalance > 0, string(abi.encodePacked("Only owner of ", ownableToken.name(), " can call this function")));
+        _;
+    }
+
+    function buyTokens() public payable onlyTokenOwner {
         require(msg.value > 0, "Send ETH to buy some tokens");
         uint256 currentPrice = tokenPrice();
         uint256 amountToBuy = msg.value * currentPrice / (10 ** 18);
@@ -42,7 +51,7 @@ contract TokenVendor is Ownable {
         }
     }
 
-    function buyTokensForERC20(address payableTokenAddress, uint256 payableTokenAmount) public virtual {
+    function buyTokensForERC20(address payableTokenAddress, uint256 payableTokenAmount) public virtual onlyTokenOwner {
         require(payableTokenAmount > 0, "payableTokenAmount must be greater than zero");
         uint256 allowance = ERC20(payableTokenAddress).allowance(msg.sender, address(this));
         require(allowance >= payableTokenAmount, "Allowance must be greater or equals to payableTokenAmount");
