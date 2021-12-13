@@ -3,7 +3,6 @@ pragma solidity 0.8.9;
 
 import "./AlexGCoin.sol";
 import "hardhat/console.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
@@ -12,21 +11,24 @@ interface Students {
     function getStudentsList() external view returns (string[] memory);
 }
 
-contract TokenVendor is Ownable {
+contract TokenVendor {
 
     AlexGCoin internal ownToken;
     AggregatorV3Interface internal priceFeed;
     Students internal students;
     ERC721 internal ownableToken;
+    bool private initialized;
 
     event BuyTokens(address buyer, uint256 paidAmount, uint256 sellAmount);
     event NotEnoughTokens(address buyer, uint256 paidAmount, uint256 sellAmount);
 
-    constructor(address tokenAddress, address priceFeedAddress, address studentsAddress, address ownableTokenAddress) {
+    function initialize(address tokenAddress, address priceFeedAddress, address studentsAddress, address ownableTokenAddress) public {
+        require(!initialized, "Contract instance has already been initialized");
         ownToken = AlexGCoin(tokenAddress);
         priceFeed = AggregatorV3Interface(priceFeedAddress);
         students = Students(studentsAddress);
         ownableToken = ERC721(ownableTokenAddress);
+        initialized = true;
     }
 
     modifier onlyTokenOwner {
@@ -71,7 +73,7 @@ contract TokenVendor is Ownable {
         return uint256(ETHUSDPrice) / students.getStudentsList().length;
     }
 
-    function tokenPriceForERC20(address payableTokenAddress) public view returns (uint256) {
+    function tokenPriceForERC20(address payableTokenAddress) public pure returns (uint256) {
         return 1 * 10 ** 18;
     }
 }

@@ -24,34 +24,29 @@ describe('Test token vendor contract', () => {
         //Deploy ERC20 token
         let contractFactory = await ethers.getContractFactory('AlexGCoin');
         ownTokenContract = await contractFactory.deploy();
-
         //Deploy ERC721 token
         contractFactory = await ethers.getContractFactory('NFTFactory');
         const nftContract = await contractFactory.deploy('TestNFT', 'TFT');
-        await nftContract.deployed();
         await nftContract.connect(owner).createToken(addr1.address);
         await nftContract.connect(owner).createToken(addr2.address);
         ownableTokenName = await nftContract.name();
-
         //Deploy vendor for ERC20 token
-        contractFactory = await ethers.getContractFactory('TokenVendor');
+        contractFactory = await ethers.getContractFactory('TokenVendor', owner);
         vendorContract = await contractFactory.deploy();
+        //Deploy VendorProxy
+        contractFactory = await ethers.getContractFactory('VendorProxy', owner);
+        let vendorProxyContract = await contractFactory.deploy();
+        await vendorProxyContract.setImplementation(vendorContract.address);
+        //Get proxy contract instance using TokenVendor interface
+        vendorContract = await ethers.getContractAt('TokenVendor', vendorProxyContract.address, owner);
         await vendorContract.initialize(ownTokenContract.address, priceFeed, studentsContract, nftContract.address);
         await ownTokenContract.transfer(vendorContract.address, ownTokenContract.totalSupply());
         vendorTokensSupply = await ownTokenContract.balanceOf(vendorContract.address);
-
         //mint 1000 DAI tokens
         let mintableERC20Interface = 'AlexGCoin';
         daiTokenContract = await ethers.getContractAt(mintableERC20Interface, daiTokenAddress, owner);
         await daiTokenContract.connect(owner).mint(addr2.address, ethers.utils.parseEther("1000"));
     });
-
-    describe('Test initialize method', () => {
-        it('initialize method must fail if called more than once', async () => {
-            await expect(vendorContract.initialize(ownTokenContract.address, priceFeed, studentsContract, priceFeed))
-                .to.be.revertedWith('Contract instance has already been initialized');
-        });
-    })
 
     describe('Test buyTokens() method', () => {
 
@@ -71,11 +66,9 @@ describe('Test token vendor contract', () => {
             const tokensPerEth = await vendorContract.tokenPrice();
             const sendAmount = ethers.utils.parseEther("2");
             const receiveAmount = tokensPerEth * 2;
-            await expect(
-                vendorContract.connect(addr1).buyTokens({
-                    value: sendAmount,
-                }),
-            ).to.emit(vendorContract, 'BuyTokens').withArgs(addr1.address, sendAmount, receiveAmount);
+            await expect(vendorContract.connect(addr1).buyTokens({value: sendAmount}))
+                .to.emit(vendorContract, 'BuyTokens')
+                .withArgs(addr1.address, sendAmount, receiveAmount);
             const userTokenBalance = await ownTokenContract.balanceOf(addr1.address);
             expect(userTokenBalance).to.equal(receiveAmount);
             const vendorTokenBalance = await ownTokenContract.balanceOf(vendorContract.address);
@@ -95,6 +88,22 @@ describe('Test token vendor contract', () => {
                 .withArgs(addr1.address, sendAmount, receiveAmount);
             let totalGasUsed = receipt.gasUsed.mul(txResponse.gasPrice);
             expect(senderBalanceBefore).to.equal(senderBalanceAfter.add(totalGasUsed));
+        });
+    });
+
+    describe('Test setImplementation(implAddress) method', () => {
+
+        it('setImplementation reverted: caller is not the owner', async () => {
+            let vendorProxyContract = await ethers.getContractAt('VendorProxy', vendorContract.address, addr3);
+            await expect(vendorProxyContract.connect(addr3).setImplementation(daiTokenContract.address))
+                .to.be.revertedWith('Ownable: caller is not the owner');
+        });
+
+        it('setImplementation success', async () => {
+            let contractFactory = await ethers.getContractFactory('TokenVendor', owner);
+            let newVendorInstance = await contractFactory.deploy();
+            let vendorProxyContract = await ethers.getContractAt('VendorProxy', vendorContract.address, owner);
+            await vendorProxyContract.setImplementation(newVendorInstance.address);
         });
     });
 
