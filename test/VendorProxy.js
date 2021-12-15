@@ -33,13 +33,15 @@ describe('Test token vendor contract', () => {
         //Deploy vendor for ERC20 token
         contractFactory = await ethers.getContractFactory('TokenVendor', owner);
         vendorContract = await contractFactory.deploy();
+        let tokenVendorInterface = contractFactory.interface;
         //Deploy VendorProxy
+        const initFuncCallData = tokenVendorInterface.encodeFunctionData(
+            "initialize",
+            [ownTokenContract.address, priceFeed, studentsContract, nftContract.address]);
         contractFactory = await ethers.getContractFactory('VendorProxy', owner);
-        let vendorProxyContract = await contractFactory.deploy();
-        await vendorProxyContract.setImplementation(vendorContract.address);
+        let vendorProxyContract = await contractFactory.deploy(vendorContract.address, initFuncCallData);
         //Get proxy contract instance using TokenVendor interface
         vendorContract = await ethers.getContractAt('TokenVendor', vendorProxyContract.address, owner);
-        await vendorContract.initialize(ownTokenContract.address, priceFeed, studentsContract, nftContract.address);
         await ownTokenContract.transfer(vendorContract.address, ownTokenContract.totalSupply());
         vendorTokensSupply = await ownTokenContract.balanceOf(vendorContract.address);
         //mint 1000 DAI tokens
@@ -91,19 +93,20 @@ describe('Test token vendor contract', () => {
         });
     });
 
-    describe('Test setImplementation(implAddress) method', () => {
+    describe('Test upgradeTo(implAddress) method', () => {
 
-        it('setImplementation reverted: caller is not the owner', async () => {
-            let vendorProxyContract = await ethers.getContractAt('VendorProxy', vendorContract.address, addr3);
-            await expect(vendorProxyContract.connect(addr3).setImplementation(daiTokenContract.address))
-                .to.be.revertedWith('Ownable: caller is not the owner');
+        it('upgradeTo reverted: caller is not the owner', async () => {
+            await expect(vendorContract.connect(addr2).upgradeTo(daiTokenContract.address))
+                .to.be.revertedWith("Ownable: caller is not the owner");
         });
 
-        it('setImplementation success', async () => {
+        it('upgradeTo success', async () => {
             let contractFactory = await ethers.getContractFactory('TokenVendor', owner);
             let newVendorInstance = await contractFactory.deploy();
-            let vendorProxyContract = await ethers.getContractAt('VendorProxy', vendorContract.address, owner);
-            await vendorProxyContract.setImplementation(newVendorInstance.address);
+            let upgradeResult = await vendorContract.connect(owner).upgradeTo(newVendorInstance.address);
+            expect(upgradeResult)
+                .to.emit(vendorContract, 'Upgraded')
+                .withArgs(newVendorInstance.address);
         });
     });
 

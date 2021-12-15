@@ -49,7 +49,7 @@ describe('Test token vendor contract', () => {
     describe('Test initialize method', () => {
         it('initialize method must fail if called more than once', async () => {
             await expect(vendorContract.initialize(ownTokenContract.address, priceFeed, studentsContract, priceFeed))
-                .to.be.revertedWith('Contract instance has already been initialized');
+                .to.be.revertedWith('Initializable: contract is already initialized');
         });
     })
 

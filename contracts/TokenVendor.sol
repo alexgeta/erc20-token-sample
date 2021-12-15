@@ -5,30 +5,34 @@ import "./AlexGCoin.sol";
 import "hardhat/console.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 interface Students {
     function getStudentsList() external view returns (string[] memory);
 }
 
-contract TokenVendor {
+contract TokenVendor is UUPSUpgradeable, OwnableUpgradeable {
 
     AlexGCoin internal ownToken;
     AggregatorV3Interface internal priceFeed;
     Students internal students;
     ERC721 internal ownableToken;
-    bool private initialized;
 
     event BuyTokens(address buyer, uint256 paidAmount, uint256 sellAmount);
     event NotEnoughTokens(address buyer, uint256 paidAmount, uint256 sellAmount);
 
-    function initialize(address tokenAddress, address priceFeedAddress, address studentsAddress, address ownableTokenAddress) public {
-        require(!initialized, "Contract instance has already been initialized");
+    function initialize(address tokenAddress, address priceFeedAddress, address studentsAddress, address ownableTokenAddress) public initializer {
         ownToken = AlexGCoin(tokenAddress);
         priceFeed = AggregatorV3Interface(priceFeedAddress);
         students = Students(studentsAddress);
         ownableToken = ERC721(ownableTokenAddress);
-        initialized = true;
+        __UUPSUpgradeable_init();
+        __Ownable_init();
+    }
+
+    function _authorizeUpgrade(address newImpl) internal override onlyOwner {
     }
 
     modifier onlyTokenOwner {
