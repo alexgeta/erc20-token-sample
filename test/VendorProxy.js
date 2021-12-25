@@ -15,9 +15,16 @@ describe('Test token vendor contract', () => {
     let vendorContract;
     let vendorTokensSupply;
     let ownableTokenName;
-    const priceFeed = process.env.PRICE_FEED;
+
+    const tokenContractAddress = '0x46B32Cf8b2BF580a118cD884dCF0A7Ae0f8A1604';
     const studentsContract = process.env.STUDENTS_CONTRACT;
     const daiTokenAddress = process.env.DAI_TOKEN_CONTRACT;
+    const vrfCoordinator = process.env.VRF_COORDINATOR_CONTRACT;
+    const linkToken = process.env.LINK_TOKEN_CONTRACT;
+    const vrfKeyHash = process.env.VRF_KEY_HASH;
+    const vrfFee = process.env.VRF_FEE;
+    const oracle = process.env.ORACLE;
+    const jobId = process.env.JOB_ID;
 
     before(async () => {
         [owner, addr1, addr2, addr3] = await ethers.getSigners();
@@ -37,11 +44,23 @@ describe('Test token vendor contract', () => {
         //Deploy VendorProxy
         const initFuncCallData = tokenVendorInterface.encodeFunctionData(
             "initialize",
-            [ownTokenContract.address, priceFeed, studentsContract, nftContract.address]);
+            [tokenContractAddress,
+                studentsContract,
+                nftContract.address,
+                vrfCoordinator,
+                linkToken,
+                vrfKeyHash,
+                vrfFee,
+                oracle,
+                ethers.utils.toUtf8Bytes(jobId)
+            ]);
         contractFactory = await ethers.getContractFactory('VendorProxy', owner);
         let vendorProxyContract = await contractFactory.deploy(vendorContract.address, initFuncCallData);
         //Get proxy contract instance using TokenVendor interface
+        console.log("Vendor Proxy contract address = " + vendorProxyContract.address);
         vendorContract = await ethers.getContractAt('TokenVendor', vendorProxyContract.address, owner);
+        let linkContract = await ethers.getContractAt('ERC20', linkToken, owner);
+        console.log("Vendor Proxy contract LINK balance = " + await linkContract.balanceOf(vendorProxyContract.address));
         await ownTokenContract.transfer(vendorContract.address, ownTokenContract.totalSupply());
         vendorTokensSupply = await ownTokenContract.balanceOf(vendorContract.address);
         //mint 1000 DAI tokens
@@ -50,46 +69,21 @@ describe('Test token vendor contract', () => {
         await daiTokenContract.connect(owner).mint(addr2.address, ethers.utils.parseEther("1000"));
     });
 
-    describe('Test buyTokens() method', () => {
+    describe('Test buyTokensForETH() method', () => {
 
-        it('buyTokens reverted: no eth sent', async () => {
-            await expect(
-                vendorContract.connect(addr1).buyTokens({value: 0})
-            ).to.be.revertedWith('Send ETH to buy some tokens');
-        });
-
-        it('buyTokens reverted: dont have required NFT', async () => {
-            await expect(
-                vendorContract.connect(addr3).buyTokens({value: 0})
-            ).to.be.revertedWith('Only owner of ' + ownableTokenName + ' can call this function');
-        });
-
-        it('buyTokens success!', async () => {
-            const tokensPerEth = await vendorContract.tokenPrice();
+        it('test OrderCreated event', async () => {
             const sendAmount = ethers.utils.parseEther("2");
-            const receiveAmount = tokensPerEth * 2;
-            await expect(vendorContract.connect(addr1).buyTokens({value: sendAmount}))
-                .to.emit(vendorContract, 'BuyTokens')
-                .withArgs(addr1.address, sendAmount, receiveAmount);
-            const userTokenBalance = await ownTokenContract.balanceOf(addr1.address);
-            expect(userTokenBalance).to.equal(receiveAmount);
-            const vendorTokenBalance = await ownTokenContract.balanceOf(vendorContract.address);
-            expect(vendorTokenBalance).to.equal(vendorTokensSupply.sub(receiveAmount));
+            await expect(vendorContract.connect(addr1).buyTokensForETH({value: sendAmount}))
+                .to.emit(vendorContract, 'OrderCreated')
+                .withArgs(addr1.address, sendAmount);
+            let linkContract = await ethers.getContractAt('ERC20', linkToken, owner);
+            console.log("Vendor Proxy contract LINK balance = " + await linkContract.balanceOf(vendorContract.address));
         });
 
-        it('eth returned because vendor has not enough tokens', async () => {
-            const tokensPerEth = await vendorContract.tokenPrice();
-            const sendAmount = ethers.utils.parseEther('999');
-            const receiveAmount = tokensPerEth * 999;
-            const senderBalanceBefore = await ethers.provider.getBalance(addr1.address);
-            const txResponse = await vendorContract.connect(addr1).buyTokens({value: sendAmount});
-            const receipt = await txResponse.wait();
-            const senderBalanceAfter = await ethers.provider.getBalance(addr1.address);
-            await expect(txResponse)
-                .to.emit(vendorContract, 'NotEnoughTokens')
-                .withArgs(addr1.address, sendAmount, receiveAmount);
-            let totalGasUsed = receipt.gasUsed.mul(txResponse.gasPrice);
-            expect(senderBalanceBefore).to.equal(senderBalanceAfter.add(totalGasUsed));
+        it('test Order already in progress', async () => {
+            const sendAmount = ethers.utils.parseEther("3");
+            await expect(vendorContract.connect(addr1).buyTokensForETH({value: sendAmount}))
+                .to.be.revertedWith("Order already in progress");
         });
     });
 
@@ -112,43 +106,13 @@ describe('Test token vendor contract', () => {
 
     describe('Test buyTokensForERC20(payableTokenAddress, payableTokenAmount) method', () => {
 
-        it('buyTokensForERC20 reverted no tokens sent', async () => {
-            await expect(vendorContract.connect(addr2).buyTokensForERC20(daiTokenAddress, 0))
-                .to.be.revertedWith('payableTokenAmount must be greater than zero');
-
-            await expect(vendorContract.connect(addr2).buyTokensForERC20(daiTokenAddress, ethers.utils.parseEther("1")))
-                .to.be.revertedWith('Allowance must be greater or equals to payableTokenAmount');
-
-            const sendAmount = ethers.utils.parseEther('999');
+        it('test OrderCreated event', async () => {
+            const sendAmount = ethers.utils.parseEther('3');
             await daiTokenContract.connect(addr2).approve(vendorContract.address, sendAmount);
-            const senderBalanceBefore = await daiTokenContract.balanceOf(addr2.address);
             await expect(vendorContract.connect(addr2).buyTokensForERC20(daiTokenAddress, sendAmount))
-                .to.be.revertedWith('Not enough tokens for sell');
-            const senderBalanceAfter = await daiTokenContract.balanceOf(addr2.address);
-            expect(senderBalanceBefore).to.equal(senderBalanceAfter);
+                .to.emit(vendorContract, 'OrderCreated')
+                .withArgs(addr2.address, sendAmount);
         });
 
-        it('buyTokensForERC20 success!', async () => {
-            await ownTokenContract.mint(vendorContract.address, ethers.utils.parseEther("10"));
-            const tokensPerToken = await vendorContract.tokenPriceForERC20(daiTokenAddress);
-            const sendAmount = ethers.utils.parseEther("2");
-            const receiveAmount = tokensPerToken * 2;
-
-            await expect(vendorContract.connect(addr2).buyTokensForERC20(daiTokenAddress, sendAmount))
-                .to.emit(vendorContract, 'BuyTokens')
-                .withArgs(addr2.address, sendAmount.toString(), receiveAmount.toString());
-
-            const buyerTokenBalance = await ownTokenContract.balanceOf(addr2.address);
-            expect(buyerTokenBalance.toString()).to.equal(receiveAmount.toString());
-
-            const vendorDaiBalance = await daiTokenContract.balanceOf(vendorContract.address);
-            expect(vendorDaiBalance.toString()).to.equal(sendAmount.toString());
-        });
-
-        it('buyTokensForERC20 reverted: dont have required NFT', async () => {
-            await expect(
-                vendorContract.connect(addr3).buyTokensForERC20(daiTokenAddress, 1234)
-            ).to.be.revertedWith('Only owner of ' + ownableTokenName + ' can call this function');
-        });
     });
 });
